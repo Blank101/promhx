@@ -129,7 +129,7 @@ class NodeTools {
 			try {
 				var fnArgs:Dynamic = untyped __js__("arguments");
 				var args = new Array<Dynamic>();
-				for (i in 0 ... fnArgs.len) {
+				for (i in 0 ... fnArgs.length) {
 					args[i] = fnArgs[i];
 				}
 				args.push(function (err:String, value:Dynamic) {
@@ -139,7 +139,7 @@ class NodeTools {
 						__p.reject(err);
 					} else if (fnArgs.length > 2) {
 						var args = new Array<Dynamic>();
-						for (i in 0 ... fnArgs.len) {
+						for (i in 0 ... fnArgs.length) {
 							args[i] = fnArgs[i];
 						}
 						__d.resolve(args);
