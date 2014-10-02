@@ -123,7 +123,7 @@ class NodeTools {
 	}
 	
 	static function promisifyDynamic (fn:Expr, ?ctx:Expr):Expr {
-		var promisified = macro function () {
+		var promisified = macro untyped function () {
 			var __d = new promhx.Deferred<Dynamic>();
 			var __p = __d.promise();
 			try {
