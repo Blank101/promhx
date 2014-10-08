@@ -35,7 +35,7 @@ class NodeTools {
 					
 					if (i == 0) {
 						switch (Context.follow(a.t)) {
-							case TInst(t, _) if (t.get().name == "String"):
+							case TInst(t, _) if (t.toString() == "js.Error"):
 							default:
 								throw "First argument of the callback function must be an error string.";
 						}
@@ -86,14 +86,15 @@ class NodeTools {
 			expr: ECall(fn, callArgs),
 			pos: p
 		};
-		var newDeferred = {
-			expr: ENew({
-				sub: null,
-				params: [TPType(cbArgs.length > 2 ? TPath({
+		var returnType = TPType(cbArgs.length > 2 ? TPath({
 					sub: null,
 					params: [TPType(TPath({ sub:null, params:[], pack:[], name:"Dynamic" }))],
 					pack: [],
-					name: "Array" }) : cbArgs[cbArgs.length - 1].type)],
+					name: "Array" } ) : cbArgs[cbArgs.length - 1].type);
+		var newDeferred = {
+			expr: ENew({
+				sub: null,
+				params: [returnType],
 				pack: ["promhx"],
 				name: "Deferred"
 			}, []),
@@ -113,7 +114,12 @@ class NodeTools {
 		
 		return {
 			expr: EFunction(null, {
-				ret: null,
+				ret: TPath({
+					sub: null,
+					params: [returnType],
+					pack: ["promhx"],
+					name: "Promise"
+				}),
 				params: [],
 				expr: promisifiedBlock,
 				args: newArgs
@@ -170,48 +176,104 @@ class NodeTools {
 		return null;
 	}
 	
-	static function autoPromisifyFields (src:Array<ClassField>, dest:Array<Field>, require:String):Void {
+	static function autoPromisifyFields (srcType:ClassType, srcFields:Array<ClassField>, srcStatics:Array<ClassField>, dest:Array<Field>):Void {
 		var p = Context.currentPos();
 		
-		for (i in src) {
-			switch (i.type) {
+		var checkAddField = function (f:ClassField, stat:Bool) {
+			switch (f.type) {
 				case TFun(args, ret):
+					var pfun = null;
 					try {
-						var req = macro untyped __js__("require")(${Context.makeExpr(require, p)});
-						req = {
-							expr: EField(req, i.name),
-							pos: p
-						};
-						var pfun = promisifyTyped(req, args, ret);
-						dest.push({
-							pos: p,
-							name: i.name,
-							meta: [],
-							kind: FFun(switch (pfun.expr) {
-								case EFunction(_, f): f;
-								default: null;
-							}),
-							doc: null,
-							access: i.isPublic ? [APublic, AStatic] : [APrivate, AStatic]
-						});
+						var req = if (stat) {
+							Context.parse(srcType.pack.join(".") + "." + srcType.name + "." + f.name, p);
+						} else {
+							var ethis = macro this;
+							{
+								expr: EField(ethis, f.name),
+								pos: p
+							};
+						}
+						pfun = switch (promisifyTyped(req, args, ret).expr) { case EFunction(_, f): f; default: null; };
 					} catch (e:Dynamic) {
+						var newArgs = new Array<FunctionArg>();
+						for (i in args) {
+							newArgs.push({
+								value: null,
+								type: Context.toComplexType(i.t),
+								opt: i.opt,
+								name: i.name
+							});
+						}
+						
+						pfun = {
+							ret: Context.toComplexType(ret),
+							params: [],
+							expr: null,
+							args: newArgs
+						};
 					}
+					
+					var meta = new Array<MetadataEntry>();
+					for (m in f.meta.get()) {
+						meta.push({
+							pos: m.pos,
+							params: m.params,
+							name: m.name
+						});
+					}
+					
+					var access = [APublic];
+					if (pfun.expr != null) access.push(AInline);
+					if (stat) access.push(AStatic);
+					dest.push({
+						pos: p,
+						name: f.name,
+						meta: meta,
+						kind: FFun(pfun),
+						doc: f.doc,
+						access: access
+					});
 				default:
 			}
+		};
+		
+		for (i in srcFields) {
+			checkAddField(i, false);
+		}
+		for (i in srcStatics) {
+			checkAddField(i, true);
 		}
 	}
 	
-	static function autoPromisify (target:String, require:String):Array<Field> {
+	static function autoPromisify (?target:Expr):Array<Field> {
 		var fields = Context.getBuildFields();
 		var p = Context.currentPos();
+		var cls = Context.getLocalClass().get();
 		
-		switch (Context.follow(Context.getType(target))) {
+		function extractTargetString (target:Expr):Null<String> {
+			return switch (target.expr) {
+				case EConst(CIdent(s)): s;
+				default: Context.error("Invalid target.", p);
+			};
+		}
+		
+		var _target = extractTargetString(target);
+		var type = null;
+		
+		if (_target == "null") {
+			type = (cls.pack.join(".") + "." + cls.name).substr("promhx.".length);
+		}
+		
+		switch (Context.follow(Context.getType(type))) {
 			case TInst(t, _):
-				autoPromisifyFields(t.get().fields.get(), fields, require);
-			case TAnonymous(a):
-				autoPromisifyFields(a.get().fields, fields, require);
+				var type = t.get();
+				for (i in type.meta.get()) {
+					cls.meta.add(i.name, i.params, i.pos);
+				}
+				
+				autoPromisifyFields(type, type.fields.get(), type.statics.get(), fields);
 			default:
-				Context.error("Invalid auto-promisify target. Only classes and typedefs are supported.", p);
+				Context.error("Invalid auto-promisify target.", p);
 		}
 		
 		return fields;
