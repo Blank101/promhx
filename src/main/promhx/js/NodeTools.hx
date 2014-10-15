@@ -4,10 +4,13 @@ import haxe.macro.Context;
 import haxe.macro.Expr;
 import haxe.macro.Type;
 
+using Lambda;
+using StringTools;
+
 class NodeTools {
 	
 	#if macro
-	static function promisifyTyped (fn:Expr, args:Array<{t:Type, opt:Bool, name:String}>, ret:Type, ?ctx:Expr):Expr {
+	static function promisifyTyped (fn:Expr, args:Array<{t:Type, opt:Bool, name:String}>, ret:Type, params:Array<TypeParameter>, ?ctx:Expr):Expr {
 		var p = Context.currentPos();
 		
 		var newArgs = new Array<FunctionArg>();
@@ -120,7 +123,13 @@ class NodeTools {
 					pack: ["promhx"],
 					name: "Promise"
 				}),
-				params: [],
+				params: params.map(function (e) {
+					return {
+						params: null,
+						name: e.name,
+						constraints: null
+					};
+				}),
 				expr: promisifiedBlock,
 				args: newArgs
 			}),
@@ -166,7 +175,7 @@ class NodeTools {
 	static function _promisify (fn:Expr, ?ctx:Expr):Expr {
 		switch (Context.follow(Context.typeof(fn))) {
 			case TFun(args, ret):
-				return promisifyTyped(fn, args, ret, ctx);
+				return promisifyTyped(fn, args, ret, [], ctx);
 			case TDynamic(_):
 				return promisifyDynamic(fn, ctx);
 			default:
@@ -176,7 +185,7 @@ class NodeTools {
 		return null;
 	}
 	
-	static function autoPromisifyFields (srcType:ClassType, srcFields:Array<ClassField>, srcStatics:Array<ClassField>, dest:Array<Field>):Void {
+	static function autoPromisifyFields (src:ClassType, dest:Array<Field>):Void {
 		var p = Context.currentPos();
 		
 		var checkAddField = function (f:ClassField, stat:Bool) {
@@ -185,15 +194,15 @@ class NodeTools {
 					var pfun = null;
 					try {
 						var req = if (stat) {
-							Context.parse(srcType.pack.join(".") + "." + srcType.name + "." + f.name, p);
+							Context.parse(src.pack.join(".") + "." + src.name + "." + f.name, p);
 						} else {
-							var ethis = macro this;
+							var ethis = macro untyped __js__("this");
 							{
 								expr: EField(ethis, f.name),
 								pos: p
 							};
 						}
-						pfun = switch (promisifyTyped(req, args, ret).expr) { case EFunction(_, f): f; default: null; };
+						pfun = switch (promisifyTyped(req, args, ret, f.params).expr) { case EFunction(_, f): f; default: null; };
 					} catch (e:Dynamic) {
 						var newArgs = new Array<FunctionArg>();
 						for (i in args) {
@@ -206,8 +215,14 @@ class NodeTools {
 						}
 						
 						pfun = {
-							ret: Context.toComplexType(ret),
-							params: [],
+							ret: f.name != "new" ? Context.toComplexType(ret) : null,
+							params: f.params.map(function (e) {
+								return {
+									params: null,
+									name: e.name,
+									constraints: null
+								};
+							}),
 							expr: null,
 							args: newArgs
 						};
@@ -237,15 +252,116 @@ class NodeTools {
 			}
 		};
 		
-		for (i in srcFields) {
+		for (i in src.fields.get()) {
 			checkAddField(i, false);
 		}
-		for (i in srcStatics) {
+		for (i in src.statics.get()) {
 			checkAddField(i, true);
+		}
+		if (src.constructor != null) checkAddField(src.constructor.get(), false);
+	}
+	
+	static var alreadyBuilt = new Array<String>();
+	static function promisifyPackage (from:String, to:String, ?rec:Bool = true, ?ignore:Array<String>, ?classPaths:Array<String>, ?fromr:String, ?tor:String):Void {
+		if (fromr == null) fromr = from;
+		if (tor == null) tor = to;
+		var skip = if( ignore == null ) {
+			function(c) return false;
+		} else {
+			function(c) return Lambda.has(ignore, c);
+		}
+		function buildClass (t:ClassType, pack:String) {
+			var typePath = pack + "." + t.name;
+			try {
+				//Skip over already built types
+				if (alreadyBuilt.has(typePath) || Context.getType(typePath) != null) return;
+			} catch (e:Dynamic) { }
+			
+			//Build superclasses and interfaces first
+			var superCls:TypePath = if (t.superClass != null) {
+				var sc = t.superClass.t.get();
+				buildClass(sc, sc.pack.join(".").replace(from, to));
+				{
+					sub: null,
+					params: null,
+					pack: sc.pack.join(".").replace(from, to).split("."),
+					name: sc.name
+				};
+			} else {
+				null;
+			}
+			var interfaces = t.interfaces.map(function (e) {
+					var i = e.t.get();
+					buildClass(i, i.pack.join(".").replace(from, to));
+					return {
+						sub: null,
+						params: null,
+						pack: i.pack.join(".").replace(from, to).split("."),
+						name: i.name
+					};
+				});
+			if (t.isInterface && interfaces.length > 0) {
+				superCls = interfaces[0];
+				interfaces = new Array<TypePath>();
+			}
+			
+			var fields = new Array<Field>();
+			autoPromisifyFields(t, fields);
+			var meta = new Metadata();
+			for (i in t.meta.get()) {
+				meta.push({name:i.name, params:i.params, pos:i.pos});
+			}
+			
+			Context.defineType({
+				pos: t.pos,
+				params: null,
+				pack: pack.split("."),
+				name: t.name,
+				meta: meta,
+				kind: TDClass(superCls, interfaces, t.isInterface),
+				isExtern: true,
+				fields: fields
+			});
+			alreadyBuilt.push(typePath);
+		};
+		if( classPaths == null ) {
+			classPaths = Context.getClassPath();
+			// normalize class path
+			for( i in 0...classPaths.length ) {
+				var cp = StringTools.replace(classPaths[i], "\\", "/");
+				if(StringTools.endsWith(cp, "/"))
+					cp = cp.substr(0, -1);
+				if( cp == "" )
+					cp = ".";
+				classPaths[i] = cp;
+			}
+		}
+		var prefix = fromr == '' ? '' : fromr + '.';
+		var toprefix = tor == '' ? '' : tor + '.';
+		for( cp in classPaths ) {
+			var path = fromr == '' ? cp : cp + "/" + fromr.split(".").join("/");
+			if( !sys.FileSystem.exists(path) || !sys.FileSystem.isDirectory(path) )
+				continue;
+			for( file in sys.FileSystem.readDirectory(path) ) {
+				if( StringTools.endsWith(file, ".hx") ) {
+					var cl = prefix + file.substr(0, file.length - 3);
+					if( skip(cl) )
+						continue;
+					for (type in Context.getModule(cl)) {
+						switch (type) {
+							case TInst(ct, params):
+								//Only interested in class definitions
+								buildClass(ct.get(), tor);
+							default:
+						}
+					}
+				} else if( rec && sys.FileSystem.isDirectory(path + "/" + file) && !skip(prefix + file) )
+					promisifyPackage(from, to, true, ignore, classPaths, prefix + file, toprefix + file);
+			}
 		}
 	}
 	
-	static function autoPromisify (?target:Expr):Array<Field> {
+	static function autoPromisify (target:Expr):Array<Field> {
 		var fields = Context.getBuildFields();
 		var p = Context.currentPos();
 		var cls = Context.getLocalClass().get();
@@ -253,25 +369,19 @@ class NodeTools {
 		function extractTargetString (target:Expr):Null<String> {
 			return switch (target.expr) {
 				case EConst(CIdent(s)): s;
+				case EField(e, field): return extractTargetString(e) + "." + field;
 				default: Context.error("Invalid target.", p);
 			};
 		}
 		
-		var _target = extractTargetString(target);
-		var type = null;
-		
-		if (_target == "null") {
-			type = (cls.pack.join(".") + "." + cls.name).substr("promhx.".length);
-		}
-		
-		switch (Context.follow(Context.getType(type))) {
+		switch (Context.follow(Context.getType(extractTargetString(target)))) {
 			case TInst(t, _):
 				var type = t.get();
 				for (i in type.meta.get()) {
 					cls.meta.add(i.name, i.params, i.pos);
 				}
 				
-				autoPromisifyFields(type, type.fields.get(), type.statics.get(), fields);
+				autoPromisifyFields(type, fields);
 			default:
 				Context.error("Invalid auto-promisify target.", p);
 		}
