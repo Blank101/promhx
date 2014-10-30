@@ -31,6 +31,7 @@ class AsyncBase<T>{
     var _fulfilled  : Bool;
     var _pending    : Bool;
     var _update     : Array<AsyncLink<T>>;
+    var _errored    : Bool;
     var _error      : Array<Dynamic->Void>;
     var _errorMap   : Dynamic->T;
 
@@ -49,6 +50,7 @@ class AsyncBase<T>{
         _fulfilled  = false;
         _update     = [];
         _error      = [];
+        _errored    = false;
 
     }
 
@@ -75,6 +77,12 @@ class AsyncBase<T>{
      **/
     public inline function isResolved() : Bool
         return _resolved;
+
+    /**
+      Utility function to determine if a Promise value has been resolved.
+     **/
+    public inline function isErrored() : Bool
+        return _errored;
 
 
     /**
@@ -131,9 +139,13 @@ class AsyncBase<T>{
     }
 
     /**
-      Handle errors
+      Handle errors, can be overridden
      **/
     function handleError(error : Dynamic) : Void {
+        _handleError(error);
+    }
+
+    function _handleError(error : Dynamic) : Void {
         var update_errors = function(e:Dynamic){
             if (_error.length > 0) for (ef in _error) ef(e);
             else if (_update.length > 0) for (up in _update) up.async.handleError(e);
@@ -212,6 +224,10 @@ class AsyncBase<T>{
     static function immediateLinkUpdate<A,B>
         (current : AsyncBase<A>, next : AsyncBase<B>, f : A->B) : Void
     {
+        // propagate the errors first
+        if (current.isErrored()) next.handleError(current._error); 
+
+        // then the value
         if (current.isResolved() && !current.isPending()){
             // we can go ahead and resolve this.
 #if PromhxExposeErrors
