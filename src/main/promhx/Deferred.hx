@@ -9,7 +9,7 @@ class Deferred<T> extends AsyncBase<T> {
     /**
       The public write interface
      **/
-    public function resolve(val:T) handleResolve(val);
+    public function resolve(?val:T) handleResolve(val);
 
     inline public function throwError(e:Dynamic) handleError(e);
 
@@ -34,3 +34,9 @@ class Deferred<T> extends AsyncBase<T> {
         return new PublicStream(this);
     }
 }
+
+/**
+  Placeholder for a deferred where the result doesn't matter. Only that it was resolved is important.
+ **/
+@:expose
+typedef EmptyDeferred = Deferred<Dynamic>;

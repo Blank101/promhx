@@ -125,15 +125,30 @@ class Promise<T> extends AsyncBase<T>{
         AsyncBase.pipeLink(this, ret, f);
         return ret;
     }
-
-
+	
     /**
       Converts any value to a resolved Promise
      **/
-    public static function promise<T>(_val : T): Promise<T> {
+    public static function promise<T>(?_val : T): Promise<T> {
         var ret = new Promise<T>();
         ret.handleResolve(_val);
         return ret;
     }
+	
+    /**
+      Creates and immediately rejects a promise
+     **/
+    public static function rejectedPromise<T>(e : Dynamic): Promise<T> {
+        var ret = new Promise<T>();
+        ret.reject(e);
+        return ret;
+    }
+	
 }
+
+/**
+  Placeholder for a promise where the result doesn't matter. Only that it was resolved or rejected is important.
+ **/
+@:expose
+typedef EmptyPromise = Promise<Dynamic>;
 

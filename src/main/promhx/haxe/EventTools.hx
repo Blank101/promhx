@@ -37,7 +37,7 @@ class EventTools {
             ){
             var def = new Deferred<Dynamic>();
             el.addEventListener(event, def.resolve, useCapture);
-            return def.promise();
+            return def.stream();
         }
 }
 
