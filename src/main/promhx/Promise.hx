@@ -138,7 +138,7 @@ class Promise<T> extends AsyncBase<T>{
     /**
       Creates and immediately rejects a promise
      **/
-    public static function rejectedPromise<T>(e : Dynamic): Promise<T> {
+    public static function error<T>(e : Dynamic): Promise<T> {
         var ret = new Promise<T>();
         ret.reject(e);
         return ret;
