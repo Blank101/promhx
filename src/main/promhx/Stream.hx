@@ -11,10 +11,10 @@ import haxe.ds.Option;
 
 @:expose
 class Stream<T> extends AsyncBase<T> {
-    var deferred : Deferred<T>;
-    var _pause : Bool;
-    var _end : Bool;
-    var _end_promise : Promise<Option<T>>;
+    var deferred      : Deferred<T>;
+    var _pause        : Bool;
+    var _end          : Bool;
+    var _end_promise  : Promise<Option<T>>;
     var _end_deferred : Deferred<Option<T>>;
 
     public function new(?d : Deferred<T>){
@@ -38,10 +38,10 @@ class Stream<T> extends AsyncBase<T> {
         var eargs = {expr:EArrayDecl(args), pos:pos};
 
         // An array of the resolved stream values
-        var epargs = [for (a in args) { expr: EField(a, "_val"), pos: pos}];
+        var epargs = [for (i in 0...args.length) macro arr[$v{i}]._val];
 
         // the returned function that actually does the runtime work.
-        return macro {
+        return macro @:privateAccess {
             // a function that accepts a variable argument function
             var varargf = function(f){
                 // we wait on all of the streams with the iterable-based "whenAll"
@@ -49,9 +49,9 @@ class Stream<T> extends AsyncBase<T> {
                 // up a new stream for return.
                 // this new stream resolves via a macro-defined function expression
                 // on "f" that provides arity and types for the resolved stream values.
-                var ret = new Stream();
-                var arr : Array<Stream<Dynamic>> = $eargs;
-                var p = Stream.wheneverAll(arr);
+                var ret = new promhx.Stream();
+                var arr : Array<promhx.base.AsyncBase<Dynamic>> = $eargs;
+                var p = promhx.Stream.wheneverAll(arr);
                 p._update.push({
                     async: ret,
                     linkf: function(x) ret.handleResolve(f($a{epargs}))
@@ -89,11 +89,11 @@ class Stream<T> extends AsyncBase<T> {
     public function detachStream(str : Stream<Dynamic>) : Bool {
         var filtered = [];
         var removed = false;
-        for (u in this._update){
+        for (u in _update){
             if (u.async == str)  removed = true;
             else filtered.push(u);
         }
-        this._update = filtered;
+        _update = filtered;
         return removed;
     }
 
@@ -101,7 +101,7 @@ class Stream<T> extends AsyncBase<T> {
       Transforms an iterable of streams into a single stream which resolves
       to an array of values.
      **/
-    public static function wheneverAll<T>(itb : Iterable<Stream<T>>) : Stream<Array<T>> {
+    public static function wheneverAll<T>(itb : Iterable<AsyncBase<T>>) : Stream<Array<T>> {
         var ret = new Stream<Array<T>>();
         AsyncBase.linkAll(itb, ret);
         return ret;
@@ -132,7 +132,7 @@ class Stream<T> extends AsyncBase<T> {
      **/
     public inline function first() : Promise<T> {
         var s = new Promise<T>();
-        this.then(function(x) if (!s.isResolved()) s.handleResolve(x));
+        then(function(x) if (!s.isResolved()) s.handleResolve(x));
         return s;
     }
 
@@ -145,7 +145,7 @@ class Stream<T> extends AsyncBase<T> {
       the argument.  Call it without the argument to toggle the current state.
      **/
     public function pause(?set : Bool){
-        if (set == null) set == !_pause;
+        if (set == null) set = !_pause;
         _pause = set;
     }
 
@@ -157,11 +157,26 @@ class Stream<T> extends AsyncBase<T> {
     }
 
     /**
+      Pipes an error back into a normal type.
+      **/
+    public function errorPipe( f: Dynamic-> Stream<T>) : Stream<T>{
+        var ret = new Stream<T>();
+        catchError(function(e){
+            var piped = f(e);
+            piped.then(ret._resolve);
+            piped._end_promise.then(ret._end_promise._resolve);
+        });
+        then(ret._resolve);
+        _end_promise.then(function(x) ret.end());
+        return ret;
+    }
+
+    /**
       I need this as a private function to call recursively.
      **/
     function handleEnd(){
         // If the async is still pending, check on the next loop.
-        if (this.isPending()) EventLoop.enqueue(handleEnd);
+        if (isPending()) EventLoop.enqueue(handleEnd);
         else if (_end_promise.isResolved()) return;
         else {
             _end = true;

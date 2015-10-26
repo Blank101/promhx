@@ -32,10 +32,10 @@ class Promise<T> extends AsyncBase<T>{
         var eargs = {expr:EArrayDecl(args), pos:pos};
 
         // An array of the resolved promise values
-        var epargs = [for (a in args) { expr: EField(a, "_val"), pos: pos}];
+        var epargs = [for (i in 0...args.length) macro arr[$v{i}]._val];
 
         // the returned function that actually does the runtime work.
-        return macro {
+        return macro @:privateAccess {
             // a function that accepts a variable argument function
             var varargf = function(f){
                 // we wait on all of the promises with the iterable-based "whenAll"
@@ -43,9 +43,9 @@ class Promise<T> extends AsyncBase<T>{
                 // up a new promise for return.
                 // this new promise resolves via a macro-defined function expression
                 // on "f" that provides arity and types for the resolved promise values.
-                var ret = new Promise();
-                var arr : Array<Promise<Dynamic>> = $eargs;
-                var p = Promise.whenAll(arr);
+                var ret = new promhx.Promise();
+                var arr : Array<promhx.Promise<Dynamic>> = $eargs;
+                var p = promhx.Promise.whenAll(arr);
                 p._update.push({
                     async : ret,
                     linkf : function(x) ret.handleResolve(f($a{epargs}))
@@ -69,7 +69,7 @@ class Promise<T> extends AsyncBase<T>{
       Rejects the promise, throwing an error.
      **/
     public function reject(e : Dynamic): Void {
-        this._rejected = true;
+        _rejected = true;
         handleError(e);
     }
 
@@ -126,6 +126,18 @@ class Promise<T> extends AsyncBase<T>{
         return ret;
     }
 
+    /**
+      Pipes an error back into a normal type.
+      **/
+    public function errorPipe( f: Dynamic-> Promise<T>){
+        var ret = new Promise<T>();
+        catchError(function(e){
+            var piped = f(e);
+            piped.then(ret._resolve);
+        });
+        then(ret._resolve);
+        return ret;
+    }
 
     /**
       Converts any value to a resolved Promise
