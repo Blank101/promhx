@@ -162,7 +162,7 @@ class AsyncBase<T>{
             else {
 #if (js && nodejs)
                 // Node sometimes doesn't produce helpful stack information on thrown errors.
-                trace('Call Stack: ' + haxe.CallStack.toString(haxe.CallStack.callStack()));
+                trace(e);
 #end
                 throw e;
             }
