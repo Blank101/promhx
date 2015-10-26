@@ -42,7 +42,7 @@ class AsyncBase<T>{
     public function new(?d:Deferred<T>) {
 #if debug id = id_ctr +=1; #end
         if (d != null){
-            d.then(handleResolve);
+            link(d,this, function(x) return x);
         }
 
         _resolved   = false;
@@ -164,7 +164,7 @@ class AsyncBase<T>{
             else {
 #if (js && nodejs)
                 // Node sometimes doesn't produce helpful stack information on thrown errors.
-                trace('Call Stack: ' + haxe.CallStack.toString(haxe.CallStack.callStack()));
+                trace(e);
 #end
                 throw e;
             }

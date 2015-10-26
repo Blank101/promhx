@@ -125,6 +125,19 @@ class Promise<T> extends AsyncBase<T>{
         AsyncBase.pipeLink(this, ret, f);
         return ret;
     }
+
+    /**
+      Pipes an error back into a normal type.
+      **/
+    public function errorPipe( f: Dynamic-> Promise<T>){
+        var ret = new Promise<T>();
+        catchError(function(e){
+            var piped = f(e);
+            piped.then(ret._resolve);
+        });
+        then(ret._resolve);
+        return ret;
+    }
 	
     /**
       Converts any value to a resolved Promise
