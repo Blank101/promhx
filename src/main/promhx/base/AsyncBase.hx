@@ -31,26 +31,25 @@ class AsyncBase<T>{
     var _fulfilled  : Bool;
     var _pending    : Bool;
     var _update     : Array<AsyncLink<T>>;
-    var _errored    : Bool;
     var _error      : Array<Dynamic->Void>;
+    var _errored    : Bool;
     var _errorMap   : Dynamic->T;
+    var _errorVal   : Dynamic;
+    var _errorPending : Bool;
 
-    /**
-      Constructor argument can take optional function argument, which adds
-      a callback to the error handler chain.
-     **/
     public function new(?d:Deferred<T>) {
 #if debug id = id_ctr +=1; #end
-        if (d != null){
-            link(d,this, function(x) return x);
-        }
-
         _resolved   = false;
         _pending = false;
+        _errorPending = false;
         _fulfilled  = false;
         _update     = [];
         _error      = [];
         _errored    = false;
+
+        if (d != null){
+            link(d,this, function(x) return x);
+        }
 
     }
 
@@ -59,7 +58,7 @@ class AsyncBase<T>{
       This will prevent downstream async objects from receiving
       the error message.
      **/
-    public function catchError(f : Dynamic->Void) : AsyncBase<T> {
+    public function catchError(f : Dynamic->Void) {
         _error.push(f);
         return this;
     }
@@ -79,11 +78,22 @@ class AsyncBase<T>{
         return _resolved;
 
     /**
-      Utility function to determine if a Promise value has been resolved.
+      Utility function to determine if a Promise value is in an error state.
      **/
     public inline function isErrored() : Bool
         return _errored;
 
+    /**
+      Utility function to determine if a Promise has handled the error.
+     **/
+    public inline function isErrorHandled() : Bool
+        return _error.length > 0;
+
+    /**
+      Utility function to determine if a Promise error is pending.
+     **/
+    public inline function isErrorPending() : Bool
+        return _errorPending;
 
     /**
       Utility function to determine if a Promise value has been rejected.
@@ -168,20 +178,27 @@ class AsyncBase<T>{
 #end
                 throw e;
             }
+            this._errorPending = false;
         }
-        EventLoop.enqueue(function(){
-            if (_errorMap != null){
+        if (!_errorPending){
+            _errorPending = true;
+            _errored = true;
+            _errorVal = error;
+
+            EventLoop.enqueue(function(){
+                if (_errorMap != null){
 #if PromhxExposeErrors
-                this._resolve(_errorMap(error));
-            _resolve(_errorMap(error));
+                    this._resolve(_errorMap(error));
+                    _resolve(_errorMap(error));
 #else
-                try this._resolve(_errorMap(error))
-                catch (e : Dynamic) update_errors(e);
+                    try this._resolve(_errorMap(error))
+                        catch (e : Dynamic) update_errors(e);
 #end
-            } else {
-                update_errors(error);
-            }
-        });
+                } else {
+                    update_errors(error);
+                }
+            });
+        }
     }
 
     /**
@@ -236,8 +253,10 @@ class AsyncBase<T>{
     static function immediateLinkUpdate<A,B>
         (current : AsyncBase<A>, next : AsyncBase<B>, f : A->B) : Void
     {
-        // propagate the errors first
-        if (current.isErrored()) next.handleError(current._error); 
+        if (current.isErrored()  // is there an error?
+                && !current.isErrorPending()  // if the error is pending, we can rely on current to update this async on the next loop.
+                && !current.isErrorHandled() ) // if the error is handled by current, we'll ignore it.
+                    next.handleError(current._errorVal);
 
         // then the value
         if (current.isResolved() && !current.isPending()){

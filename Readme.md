@@ -1,4 +1,4 @@
-# Promhx
+![Promhx](http://i.imgur.com/yMrFbQv.jpg)
 
 [![Build Status][travis-ci]]
 [travis-ci 2]
@@ -185,9 +185,12 @@ ds2.update(2);
 # Error management
 
 Promhx provides numerous run-time methods for managing errors, including the
-```catchError```, which halts the error propagation, and the ```errorThen```
-function which transforms the error back into a normal chainable type.
-Errors thrown in ```errorThen``` are caught by any ```catchError``` handler, but
+```catchError```, which halts the error propagation, the ```errorThen```
+function which transforms the error back into a normal chainable type via an 
+immediate synchronous action, and the ```errorPipe``` which transforms the 
+error back into a normal chainable type via a pipe method, which allows for 
+asynchronous error handling.
+Errors thrown in error-related methods are caught by any ```catchError``` handler, but
 errors thrown in ```catchError``` will not be caught.
 
 Also note that an asynchronous value that is in an errored state will *always*
@@ -212,6 +215,26 @@ will be executed in a given loop in order to ensure that all updates have
 a consistent value.  If blocking continues to be a problem, consider using
 more promises and streams to break the update operation up across multiple
 event loops.
+
+It is also possible to manually control the EventLoop.  The way to do this 
+is to override the default ```EventLoop.nextLoop``` function with a function
+that you call manually.  This will advance the loop logic, and execute any
+promises that are waiting there.  
+
+```haxe
+var manualAdvance = function(){};
+EventLoop.nextLoop = manualAdvance;
+
+// evaluate the next loop every 250 ms.
+haxe.Timer.delay(function(){
+  manualAdvance();
+},250);
+```
+
+Furthermore, you can use the ```EventLoop.finish()``` method to immediately 
+begin resolving the pending promises.  This will also include resolving any 
+chaining that might be specified.  The method accepts an argument giving
+the number of maximum event loop operations to perform.
 
 
 # Promhx Http Class
@@ -300,15 +323,18 @@ pass around as a single interface for both deferreds and their respective async
 types.
 
 #Node.js
-Promhx supports Node.js but becuase there is no node.js compile target you must pass `-D nodejs` and `-lib nodejs` to the compiler.
+Promhx supports Node.js but you must pass `-lib nodejs` to the compiler.
 
 
 # Acknowledgements
 
-* [Laurent Bédubourg][github 2] for pull requests and implementation discussions.
+* [Laurent Bédubourg][labe-me] for pull requests and implementation discussions.
+* [Danny Wilson][vizanto] for a thread-safe java imlementation.
+
 
 [github]: https://github.com/sledorze/monax
-[github 2]: https://github.com/labe-me
+[labe-me]: https://github.com/labe-me
+[vizanto]: https://github.com/vizanto
 [haxe]: http://www.haxe.org
 [travis-ci]: https://travis-ci.org/jdonaldson/promhx.png
 [travis-ci 2]: https://travis-ci.org/jdonaldson/promhx
