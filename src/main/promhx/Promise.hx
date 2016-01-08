@@ -147,5 +147,21 @@ class Promise<T> extends AsyncBase<T>{
         ret.handleResolve(_val);
         return ret;
     }
+	
+    /**
+      Creates and immediately rejects a promise
+     **/
+    public static function error<T>(e : Dynamic): Promise<T> {
+        var ret = new Promise<T>();
+        ret.reject(e);
+        return ret;
+    }
+	
 }
+
+/**
+  Placeholder for a promise where the result doesn't matter. Only that it was resolved or rejected is important.
+ **/
+@:expose
+typedef EmptyPromise = Promise<Dynamic>;
 
