@@ -1,12 +1,13 @@
 
--cp src/main
--cp src/test
+-cp ../src/main
+-cp ../src/test
 -lib monax
 -lib nodejs
 -main TestAll
--cp ./lib/utest/src
+-lib utest
+-D noEmbedSetImmediate
 -D nodejs
--js bin/test_node.js
+-js ../bin/test_node.js
 -cmd echo "--------------------------------------NODE--------------------------------------"
--cmd node bin/test_node.js
+-cmd node ../bin/test_node.js
 
