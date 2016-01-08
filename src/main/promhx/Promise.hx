@@ -133,9 +133,13 @@ class Promise<T> extends AsyncBase<T>{
         var ret = new Promise<T>();
         catchError(function(e){
             var piped = f(e);
-            piped.then(ret._resolve);
+			piped.then(function (r:T) {
+				ret.handleResolve(r);
+			}).catchError(function (e:Dynamic) {
+				ret.reject(e);
+			});
         });
-        then(ret._resolve);
+		then(ret._resolve);
         return ret;
     }
 

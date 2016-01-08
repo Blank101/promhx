@@ -222,6 +222,33 @@ class TestPromise {
         });
         d1.resolve(resolved1);
     }
-
+	
+	/**
+	 * Represents a case where a 2-stage transaction fails part way through and you want to reverse the first stage.
+	 */
+	public function testTwoStageTransactionFailure(){
+		var from = Promise.promise(true);
+		var fromReversed = Promise.promise(true);
+		var to = new Promise<Bool>();
+		to.reject("Stage 2 of this transaction has failed.");
+		
+		var async = Assert.createAsync(function(){
+            Assert.isTrue(true);
+        });
+		from.pipe(function (_) {
+			return to.errorPipe(function (err) {
+				var errProm = new Promise<Bool>();
+				fromReversed.then(function (_) {
+					errProm.reject(err);
+				}).catchError(function (_) {
+					errProm.reject(err);
+				});
+				return errProm;
+			});
+		}).catchError(function (_) {
+			//This should be called
+			async();
+		});
+	}
 
 }
