@@ -1,6 +1,6 @@
-
--cp ../src/main
--cp ../src/test
+-debug
+-cp src/main
+-cp src/test
 -lib monax
 -lib nodejs
 -main TestAll
